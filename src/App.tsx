@@ -208,6 +208,14 @@ export default function App() {
     setHasUserTouched(true);
     setUserPredictions(prev=>{const cur=prev[matchId]||{homeScore:0,awayScore:0};const next={...cur,[side==='home'?'homeScore':'awayScore']:n};if(next.homeScore!==next.awayScore)delete next.winnerId;return{...prev,[matchId]:next};});
   };
+  const handlePredictionTap = (matchId:string,side:'home'|'away') => {
+    setHasUserTouched(true);
+    setUserPredictions(prev=>{const cur=prev[matchId]||{homeScore:0,awayScore:0};const key=side==='home'?'homeScore':'awayScore';const next={...cur,[key]:(cur[key]||0)+1};if(next.homeScore!==next.awayScore)delete next.winnerId;return{...prev,[matchId]:next};});
+  };
+  const handlePredictionReset = (matchId:string) => {
+    setHasUserTouched(true);
+    setUserPredictions(prev=>({...prev,[matchId]:{homeScore:0,awayScore:0}}));
+  };
   const handleWinnerSelection = (matchId:string,teamId:string) => {
     setHasUserTouched(true);
     setUserPredictions(prev=>({...prev,[matchId]:{...prev[matchId]||{homeScore:0,awayScore:0},winnerId:teamId}}));
@@ -429,7 +437,12 @@ export default function App() {
                               {officialMatches.filter(m=>m.group===groupName).map(match=>{const ht=TEAMS.find(t=>t.id===match.homeTeamId)!;const at=TEAMS.find(t=>t.id===match.awayTeamId)!;const pred=userPredictions[match.id]||{homeScore:0,awayScore:0};return(
                                 <div key={match.id} className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                                   <div className="flex-1 flex items-center gap-2 overflow-hidden"><img src={ht.crest} alt={ht.name} className="w-5 h-5 object-contain shrink-0" referrerPolicy="no-referrer"/><span className="font-black text-[10px] text-slate-900 uppercase truncate tracking-tighter">{ht.name}</span></div>
-                                  <div className="flex items-center gap-1 shrink-0"><input type="number" min="0" value={pred.homeScore} onChange={e=>handlePredictionChange(match.id,'home',e.target.value)} className="w-8 h-8 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-xs text-slate-900 focus:outline-none focus:border-fifa-blue"/><span className="text-slate-300 font-black text-[8px]">X</span><input type="number" min="0" value={pred.awayScore} onChange={e=>handlePredictionChange(match.id,'away',e.target.value)} className="w-8 h-8 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-xs text-slate-900 focus:outline-none focus:border-fifa-blue"/></div>
+                                  <div className="flex items-center gap-1 shrink-0 md:hidden">
+                                    <button type="button" onClick={()=>handlePredictionTap(match.id,'home')} className="w-9 h-9 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-black text-sm text-slate-900 active:bg-fifa-blue/10 active:scale-95 transition-all select-none">{pred.homeScore}</button>
+                                    <button type="button" onClick={()=>handlePredictionReset(match.id)} className="w-6 h-6 flex items-center justify-center text-slate-400 font-black text-[10px] active:text-red-400 transition-colors select-none">X</button>
+                                    <button type="button" onClick={()=>handlePredictionTap(match.id,'away')} className="w-9 h-9 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-black text-sm text-slate-900 active:bg-fifa-blue/10 active:scale-95 transition-all select-none">{pred.awayScore}</button>
+                                  </div>
+                                  <div className="hidden md:flex items-center gap-1 shrink-0"><input type="number" min="0" value={pred.homeScore} onChange={e=>handlePredictionChange(match.id,'home',e.target.value)} className="w-8 h-8 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-xs text-slate-900 focus:outline-none focus:border-fifa-blue"/><span className="text-slate-300 font-black text-[8px]">X</span><input type="number" min="0" value={pred.awayScore} onChange={e=>handlePredictionChange(match.id,'away',e.target.value)} className="w-8 h-8 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-xs text-slate-900 focus:outline-none focus:border-fifa-blue"/></div>
                                   <div className="flex-1 flex items-center justify-end gap-2 overflow-hidden"><span className="font-black text-[10px] text-slate-900 uppercase truncate tracking-tighter text-right">{at.name}</span><img src={at.crest} alt={at.name} className="w-5 h-5 object-contain shrink-0" referrerPolicy="no-referrer"/></div>
                                 </div>
                               );})}
