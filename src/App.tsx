@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Trophy, Calendar, Settings, Play, ChevronRight, ChevronLeft, LayoutGrid,
   Info, Zap, Save, CheckCircle2, ListOrdered, User, LayoutDashboard,
-  TrendingUp, ArrowUpRight, Shield, Trash2, Plus, Users, Star, Radio
+  TrendingUp, ArrowUpRight, Shield, Trash2, Plus, Users, Star, Radio, RefreshCw
 } from 'lucide-react';
 import { TEAMS } from './data/teams';
 import {
@@ -15,6 +15,7 @@ import {
 import type { Match, Prediction, UserPrediction, AppUser } from './types';
 import { supabaseService } from './lib/supabaseService';
 import { BolaoAoVivo } from './components/BolaoAoVivo';
+import { syncFromAPI } from './lib/footballDataService';
 
 const SidebarItem = ({ icon: Icon, active = false, onClick, label }: { icon: any; active?: boolean; onClick?: () => void; label: string }) => (
   <div onClick={onClick} className={`group relative p-3 rounded-xl cursor-pointer transition-all duration-300 ${active ? 'bg-fifa-green/20 text-fifa-green shadow-[0_0_20px_rgba(0,223,89,0.4)]' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
@@ -137,8 +138,11 @@ export default function App() {
   const [groupPageIndex, setGroupPageIndex] = useState(0);
   const [officialMatchesPageIndex, setOfficialMatchesPageIndex] = useState(0);
   const [adminTeamFilters, setAdminTeamFilters] = useState<Record<string, string|null>>({});
-  const [adminMatchEdits, setAdminMatchEdits] = useState<Record<string, Prediction>>({});
   const [officialKnockoutPredictions, setOfficialKnockoutPredictions] = useState<Record<string, Prediction>>({});
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string|null>(null);
+  const [syncError, setSyncError] = useState<string|null>(null);
+  const [syncStats, setSyncStats] = useState<{live:number;completed:number}|null>(null);
   const [hasUserTouched, setHasUserTouched] = useState(false);
   const [goldenMatchIds, setGoldenMatchIds] = useState<string[]>([]);
 
@@ -164,8 +168,7 @@ export default function App() {
   const sf = useMemo(() => { if(!qf.length||!qf.every(m=>userPredictions[m.id])) return []; return generateNextStage(qf,userPredictions,'semi_final'); }, [qf,userPredictions]);
   const fn = useMemo(() => { if(!sf.length||!sf.every(m=>userPredictions[m.id])) return []; return generateNextStage(sf,userPredictions,'final'); }, [sf,userPredictions]);
   const tp = useMemo(() => { if(!sf.length||!sf.every(m=>userPredictions[m.id])) return null; return generateThirdPlaceMatch(sf,userPredictions); }, [sf,userPredictions]);
-  const adminPreviewMatches = useMemo(() => officialMatches.map(m => { const e=adminMatchEdits[m.id]; return e?{...m,...e,status:'completed' as const}:m; }), [officialMatches,adminMatchEdits]);
-  const adminPreviewStandings = useMemo(() => calculateStandings(adminPreviewMatches,TEAMS), [adminPreviewMatches]);
+  const adminPreviewStandings = useMemo(() => calculateStandings(officialMatches,TEAMS), [officialMatches]);
   const updatedRanking = useMemo(() => {
     const allM = [...officialMatches, ...Object.entries(officialKnockoutPredictions).map(([id,pred])=>({id,homeTeamId:'',awayTeamId:'',homeScore:pred.homeScore,awayScore:pred.awayScore,status:'completed' as const,stage:'final' as any,date:'',venue:''}))];
     return savedUsers.map(u => {
@@ -223,12 +226,24 @@ export default function App() {
     setHasUserTouched(true);
     setUserPredictions(prev=>({...prev,[matchId]:{...prev[matchId]||{homeScore:0,awayScore:0},winnerId:teamId}}));
   };
-  const handleOfficialResultChange = (matchId:string,side:'home'|'away',value:string,isKO=false) => {
-    const n=parseInt(value)||0;
-    if(isKO){setOfficialKnockoutPredictions(prev=>{const cur=prev[matchId]||{homeScore:0,awayScore:0};const next={...cur,[side==='home'?'homeScore':'awayScore']:n};if(next.homeScore!==next.awayScore)delete next.winnerId;return{...prev,[matchId]:next};});}
-    else{setAdminMatchEdits(prev=>({...prev,[matchId]:{...(prev[matchId]||{homeScore:officialMatches.find(m=>m.id===matchId)?.homeScore||0,awayScore:officialMatches.find(m=>m.id===matchId)?.awayScore||0}),[side==='home'?'homeScore':'awayScore']:n}}));}
-  };
   const handleOfficialWinnerSelection = (matchId:string,teamId:string) => setOfficialKnockoutPredictions(prev=>({...prev,[matchId]:{...prev[matchId]||{homeScore:0,awayScore:0},winnerId:teamId}}));
+  const handleAPISync = async () => {
+    setIsSyncing(true); setSyncError(null);
+    try {
+      const allKO = [...officialRoundOf32,...officialRoundOf16,...officialQF,...officialSF,...officialFinal,...(officialTP?[officialTP]:[])];
+      const result = await syncFromAPI(officialMatches, allKO, officialKnockoutPredictions);
+      setOfficialMatches(result.groupUpdated);
+      setOfficialKnockoutPredictions(result.knockoutPreds);
+      supabaseService.saveOfficialMatches(result.groupUpdated);
+      supabaseService.saveSetting('official_knockout_predictions', result.knockoutPreds);
+      setLastSync(result.lastSync);
+      setSyncStats({live: result.liveCount, completed: result.completedCount});
+    } catch(e:any) {
+      setSyncError(e.message||'Erro ao sincronizar');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
   const handleLogin = async (e:FormEvent) => {
     e.preventDefault(); setLoginErrorMsg(null); setShowLoginError(false);
     try{const found=await supabaseService.login(loginForm.name,loginForm.password);if(found)setUser(found);else setShowLoginError(true);}
@@ -249,11 +264,6 @@ export default function App() {
   };
   const deleteRegisteredUser = (id:string) => { if(id==='00000000-0000-0000-0000-000000000000') return; setRegisteredUsers(p=>p.filter(u=>u.id!==id)); supabaseService.deleteRegisteredUser(id); };
   const deleteUser = (id:string) => { supabaseService.deleteUserPrediction(id); setSavedUsers(p=>p.filter(u=>u.id!==id)); };
-  const saveOfficialResults = () => {
-    setOfficialMatches(prev=>{const nm=prev.map(m=>{const e=adminMatchEdits[m.id];return e?{...m,...e,status:'completed' as const}:m;});supabaseService.saveOfficialMatches(nm);return nm;});
-    supabaseService.saveSetting('official_knockout_predictions',officialKnockoutPredictions);
-    setAdminMatchEdits({}); setShowSaveSuccess(true); setTimeout(()=>setShowSaveSuccess(false),3000);
-  };
   const sim = (m:Match):Prediction => { const h=Math.floor(Math.random()*4),a=Math.floor(Math.random()*4);const p:Prediction={homeScore:h,awayScore:a};if(h===a)p.winnerId=Math.random()>0.5?m.homeTeamId:m.awayTeamId;return p; };
   const simulateOfficialResults = () => {
     const nm=officialMatches.map(m=>m.stage==='group'?{...m,...sim(m),status:'completed' as const}:m);
@@ -271,7 +281,7 @@ export default function App() {
   };
   const clearOfficialResults = () => {
     const rm=generateGroupMatches(TEAMS);setOfficialMatches(rm);setOfficialKnockoutPredictions({});
-    supabaseService.saveOfficialMatches(rm);supabaseService.saveSetting('official_knockout_predictions',{});setAdminMatchEdits({});
+    supabaseService.saveOfficialMatches(rm);supabaseService.saveSetting('official_knockout_predictions',{});
   };
   const simulateAllPredictions = () => {
     const np:Record<string,Prediction>={...userPredictions};
@@ -615,42 +625,126 @@ export default function App() {
             {/* ADMIN RESULTS */}
             {activeTab==='results'&&(
               <div className="space-y-8 md:space-y-12">
+                {/* Header */}
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  <div><h2 className="text-2xl md:text-3xl font-black tracking-tight uppercase italic">RESULTADOS <span className="fifa-gradient-text">OFICIAIS</span></h2><p className="text-gray-500 text-xs md:text-sm">Insira os resultados reais das partidas da Copa do Mundo 2026.</p></div>
-                  <div className="flex flex-wrap items-center gap-3 md:gap-4">
-                    <button onClick={clearOfficialResults} className="flex-1 lg:flex-none bg-red-500 hover:bg-red-400 text-white font-black px-4 md:px-8 py-3 rounded-xl flex items-center justify-center gap-2 transition-all uppercase italic tracking-tighter text-[10px] md:text-sm"><Trash2 size={18}/> Excluir Todos</button>
-                    <button onClick={simulateOfficialResults} className="flex-1 lg:flex-none bg-fifa-orange hover:bg-fifa-orange/90 text-black font-black px-4 md:px-8 py-3 rounded-xl flex items-center justify-center gap-2 transition-all uppercase italic tracking-tighter text-[10px] md:text-sm"><Zap size={18}/> Simular</button>
-                    <button onClick={saveOfficialResults} className="w-full lg:w-auto bg-fifa-blue hover:bg-fifa-blue/90 text-white font-black px-4 md:px-8 py-3 rounded-xl flex items-center justify-center gap-2 transition-all uppercase italic tracking-tighter text-[10px] md:text-sm"><Save size={18}/> Salvar Tudo</button>
+                  <div>
+                    <h2 className="text-2xl md:text-3xl font-black tracking-tight uppercase italic">RESULTADOS <span className="fifa-gradient-text">OFICIAIS</span></h2>
+                    <p className="text-gray-500 text-xs md:text-sm mt-1">Sincronize os resultados reais via API ou simule para testes.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button onClick={clearOfficialResults} className="flex-1 lg:flex-none bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white font-black px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition-all uppercase tracking-tighter text-[10px] border border-red-500/20"><Trash2 size={16}/> Limpar</button>
+                    <button onClick={simulateOfficialResults} className="flex-1 lg:flex-none bg-fifa-orange/10 hover:bg-fifa-orange text-fifa-orange hover:text-black font-black px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition-all uppercase tracking-tighter text-[10px] border border-fifa-orange/20"><Zap size={16}/> Simular</button>
                   </div>
                 </div>
-                {groups.map(group=>(
-                  <div key={group} className="space-y-8">
-                    <div className="flex items-center justify-between px-2">
-                      <h3 className="text-2xl font-black text-fifa-blue italic">GRUPO {group}</h3>
-                      <div className="flex items-center gap-2"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Filtrar:</span><select value={adminTeamFilters[group]||''} onChange={e=>setAdminTeamFilters(p=>({...p,[group]:e.target.value||null}))} className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-fifa-blue transition-all"><option value="">Todas as Seleções</option>{TEAMS.filter(t=>t.group===group).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+
+                {/* API Sync Panel */}
+                <GlassCard className="p-6 md:p-8 border-fifa-green/20 bg-fifa-green/5">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-fifa-green animate-pulse"/>
+                        <span className="text-[10px] font-black text-fifa-green uppercase tracking-[0.2em]">football-data.org API</span>
+                      </div>
+                      <h3 className="text-xl font-black uppercase italic">Sincronização Automática</h3>
+                      <p className="text-gray-500 text-xs">Busca todos os resultados oficiais da Copa 2026 e atualiza o bolão automaticamente.</p>
+                      {lastSync&&<p className="text-[10px] text-gray-500 font-bold">Última sync: {new Date(lastSync).toLocaleString('pt-BR')}</p>}
+                      {syncStats&&(
+                        <div className="flex gap-4 mt-1">
+                          <span className="text-[10px] font-black text-fifa-blue">{syncStats.completed} jogos concluídos</span>
+                          {syncStats.live>0&&<span className="text-[10px] font-black text-fifa-green animate-pulse">● {syncStats.live} ao vivo agora</span>}
+                        </div>
+                      )}
+                      {syncError&&<p className="text-[10px] font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20">{syncError}</p>}
                     </div>
-                    <div className="bg-white/5 rounded-2xl border border-white/10 p-4">
-                      <div className="flex items-center gap-2 mb-4"><TrendingUp size={14} className="text-fifa-blue"/><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Prévia da Classificação (Tempo Real)</span></div>
-                      <div className="grid grid-cols-4 gap-4">{adminPreviewStandings[group]?.map((s,idx)=>{const team=TEAMS.find(t=>t.id===s.teamId);if(!team)return null;return(<div key={team.id} className="flex items-center justify-between bg-black/20 p-2 rounded-lg border border-white/5"><div className="flex items-center gap-2"><span className="text-[10px] font-bold text-gray-500 w-3">{idx+1}</span><span className="text-[10px] font-black uppercase truncate w-20">{team.name}</span></div><div className="flex items-center gap-3"><div className="flex flex-col items-center"><span className="text-[8px] text-gray-500 font-bold">SG</span><span className={`text-[10px] font-bold ${s.gd>0?'text-green-400':s.gd<0?'text-red-400':'text-gray-400'}`}>{s.gd>0?`+${s.gd}`:s.gd}</span></div><div className="flex flex-col items-center bg-fifa-blue/20 px-2 py-0.5 rounded"><span className="text-[8px] text-fifa-blue font-bold uppercase">PTS</span><span className="text-xs font-black text-white">{s.pts}</span></div></div></div>);})}</div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                      {officialMatches.filter(m=>m.group===group).filter(m=>{const f=adminTeamFilters[group];return!f||m.homeTeamId===f||m.awayTeamId===f;}).map(match=>{const ht=TEAMS.find(t=>t.id===match.homeTeamId);const at=TEAMS.find(t=>t.id===match.awayTeamId);if(!ht||!at)return null;const edit=adminMatchEdits[match.id]||{homeScore:match.homeScore||0,awayScore:match.awayScore||0};return(
-                        <GlassCard key={match.id} className="p-8 border-fifa-blue/20 bg-fifa-blue/5">
-                          <div className="flex items-center justify-between mb-6"><Badge variant={match.status==='completed'?'success':'default'}>{match.status==='completed'?'Finalizado':'Pendente'}</Badge><span className="text-[10px] text-gray-500 font-bold uppercase">Modo Admin</span></div>
-                          <div className="flex items-center justify-between gap-6">
-                            <div className="flex-1 flex flex-col items-center gap-3"><img src={ht.crest} alt={ht.name} className="w-12 h-12 object-contain" referrerPolicy="no-referrer"/><span className="text-xs font-black uppercase tracking-tighter text-center leading-none">{ht.name}</span></div>
-                            <div className="flex items-center gap-3"><input type="number" min="0" value={edit.homeScore} onChange={e=>handleOfficialResultChange(match.id,'home',e.target.value)} className="w-14 h-14 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-center font-black text-2xl focus:outline-none focus:border-blue-500 transition-all"/><span className="text-gray-600 font-black text-xl">X</span><input type="number" min="0" value={edit.awayScore} onChange={e=>handleOfficialResultChange(match.id,'away',e.target.value)} className="w-14 h-14 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-center font-black text-2xl focus:outline-none focus:border-blue-500 transition-all"/></div>
-                            <div className="flex-1 flex flex-col items-center gap-3"><img src={at.crest} alt={at.name} className="w-12 h-12 object-contain" referrerPolicy="no-referrer"/><span className="text-xs font-black uppercase tracking-tighter text-center leading-none">{at.name}</span></div>
-                          </div>
-                        </GlassCard>
-                      );})}
+                    <button
+                      onClick={handleAPISync}
+                      disabled={isSyncing}
+                      className="flex items-center justify-center gap-3 px-8 py-4 bg-fifa-green hover:bg-fifa-green/90 disabled:opacity-60 text-black font-black rounded-2xl uppercase tracking-tighter text-sm shadow-[0_0_25px_rgba(0,223,89,0.3)] transition-all active:scale-95 shrink-0"
+                    >
+                      <RefreshCw size={20} className={isSyncing?'animate-spin':''}/>
+                      {isSyncing?'Sincronizando...':'Sincronizar com API'}
+                    </button>
+                  </div>
+                </GlassCard>
+
+                {/* Classificação por grupo (leitura) */}
+                <div className="space-y-6">
+                  <h3 className="text-lg font-black uppercase italic text-gray-400 flex items-center gap-2"><TrendingUp size={18}/> Classificação Atual por Grupo</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                    {groups.map(group=>(
+                      <div key={group} className="flex flex-col rounded-2xl overflow-hidden shadow-lg">
+                        <div className="bg-black py-2 px-3 text-center"><span className="text-white font-black text-[10px] uppercase tracking-[0.2em] italic">GROUP {group}</span></div>
+                        <div className="bg-white p-3 space-y-2">
+                          {adminPreviewStandings[group]?.map((s,idx)=>{const team=TEAMS.find(t=>t.id===s.teamId);if(!team)return null;const adv=idx<2;return(
+                            <div key={team.id} className="flex items-center gap-2">
+                              <img src={team.crest} alt={team.name} className="w-4 h-4 object-contain shrink-0" referrerPolicy="no-referrer"/>
+                              <span className={`text-black font-black text-[9px] uppercase truncate flex-1 ${adv?'':'opacity-30'}`}>{team.name}</span>
+                              <span className={`font-black text-[10px] tabular-nums ${adv?'text-black':'text-black/20'}`}>{s.pts}</span>
+                              {adv&&<div className="w-1.5 h-1.5 rounded-full bg-fifa-green shrink-0"/>}
+                            </div>
+                          );})}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Resultados das partidas por grupo (leitura) */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-black uppercase italic text-gray-400">Placares das Partidas</h3>
+                    <div className="flex gap-2">
+                      <button onClick={()=>setOfficialMatchesPageIndex(p=>Math.max(0,p-1))} disabled={officialMatchesPageIndex===0} className="p-2 bg-white/5 border border-white/10 rounded-lg disabled:opacity-30"><ChevronLeft size={16}/></button>
+                      <button onClick={()=>setOfficialMatchesPageIndex(p=>Math.min(Math.ceil(groups.length/4)-1,p+1))} disabled={officialMatchesPageIndex>=Math.ceil(groups.length/4)-1} className="p-2 bg-fifa-blue text-white rounded-lg disabled:opacity-30"><ChevronRight size={16}/></button>
                     </div>
                   </div>
-                ))}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                    {groups.slice(officialMatchesPageIndex*4,officialMatchesPageIndex*4+4).map(group=>(
+                      <div key={group} className="space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10px] font-black text-fifa-blue uppercase tracking-widest italic">Grupo {group}</span>
+                          <select value={adminTeamFilters[group]||''} onChange={e=>setAdminTeamFilters(p=>({...p,[group]:e.target.value||null}))} className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[9px] font-bold focus:outline-none focus:border-fifa-blue">
+                            <option value="">Todos</option>
+                            {TEAMS.filter(t=>t.group===group).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                        </div>
+                        {officialMatches.filter(m=>m.group===group).filter(m=>{const f=adminTeamFilters[group];return!f||m.homeTeamId===f||m.awayTeamId===f;}).map(match=>{
+                          const ht=TEAMS.find(t=>t.id===match.homeTeamId);
+                          const at=TEAMS.find(t=>t.id===match.awayTeamId);
+                          if(!ht||!at)return null;
+                          const done=match.status==='completed';
+                          const live=match.status==='live';
+                          return(
+                            <div key={match.id} className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${live?'bg-fifa-green/10 border-fifa-green/30':done?'bg-white/5 border-white/5':'bg-white/2 border-white/5 opacity-60'}`}>
+                              <div className="flex-1 flex items-center gap-1.5 overflow-hidden">
+                                <img src={ht.crest} alt={ht.name} className="w-4 h-4 object-contain shrink-0" referrerPolicy="no-referrer"/>
+                                <span className="font-black text-[9px] uppercase truncate">{ht.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {live&&<span className="text-[8px] text-fifa-green font-black animate-pulse mr-1">●</span>}
+                                <span className={`font-black text-sm tabular-nums w-5 text-center ${done||live?'text-white':'text-gray-600'}`}>{done||live?(match.homeScore??'-'):'-'}</span>
+                                <span className="text-gray-600 font-black text-[10px]">×</span>
+                                <span className={`font-black text-sm tabular-nums w-5 text-center ${done||live?'text-white':'text-gray-600'}`}>{done||live?(match.awayScore??'-'):'-'}</span>
+                              </div>
+                              <div className="flex-1 flex items-center justify-end gap-1.5 overflow-hidden">
+                                <span className="font-black text-[9px] uppercase truncate text-right">{at.name}</span>
+                                <img src={at.crest} alt={at.name} className="w-4 h-4 object-contain shrink-0" referrerPolicy="no-referrer"/>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Mata-mata — seleção de vencedor em caso de empate */}
                 {allOfficialGroupMatchesFilled&&(
-                  <div className="space-y-12 pt-12 border-t border-white/5">
-                    <div><h2 className="text-3xl font-black tracking-tight uppercase italic">MATA-MATA <span className="text-blue-500">OFICIAL</span></h2><p className="text-gray-500 text-sm">Insira os resultados reais do mata-mata.</p></div>
-                    <BracketView roundOf32={officialRoundOf32} roundOf16={officialRoundOf16} quarterFinals={officialQF} semiFinals={officialSF} final={officialFinal} thirdPlace={officialTP} handlePredictionChange={(mid:string,side:'home'|'away',val:string)=>handleOfficialResultChange(mid,side,val,true)} handleWinnerSelection={handleOfficialWinnerSelection} userPredictions={officialKnockoutPredictions}/>
+                  <div className="space-y-8 pt-8 border-t border-white/5">
+                    <div>
+                      <h2 className="text-2xl font-black tracking-tight uppercase italic">MATA-MATA <span className="text-blue-500">OFICIAL</span></h2>
+                      <p className="text-gray-500 text-xs mt-1">A API preenche os placares. Em caso de empate, selecione o vencedor manualmente.</p>
+                    </div>
+                    <BracketView roundOf32={officialRoundOf32} roundOf16={officialRoundOf16} quarterFinals={officialQF} semiFinals={officialSF} final={officialFinal} thirdPlace={officialTP} handlePredictionChange={()=>{}} handleWinnerSelection={handleOfficialWinnerSelection} userPredictions={officialKnockoutPredictions}/>
                   </div>
                 )}
               </div>
