@@ -1,7 +1,8 @@
 import type { Match, Prediction } from '../types';
 
 const API_KEY = '4390b38783cc4850b09854c8066ebcc4';
-const API_URL = 'https://api.football-data.org/v4/competitions/WC/matches';
+const DIRECT_URL = 'https://api.football-data.org/v4/competitions/WC/matches';
+
 
 // ── Mappers ───────────────────────────────────────────────────────────────────
 
@@ -34,10 +35,14 @@ export interface SyncResult {
 // ── Core fetch ────────────────────────────────────────────────────────────────
 
 async function fetchAPI() {
-  const res = await fetch(API_URL, {
-    headers: { 'X-Auth-Token': API_KEY },
-  });
-  if (!res.ok) throw new Error(`football-data.org: HTTP ${res.status}`);
+  const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+  const url = isDev ? DIRECT_URL : '/api/sync';
+  const headers: Record<string, string> = isDev
+    ? { 'X-Auth-Token': API_KEY }
+    : {};
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`Erro na API: HTTP ${res.status}`);
   return res.json();
 }
 
@@ -148,13 +153,10 @@ export async function syncFromAPI(
 /** Quick check — returns true if any match is currently live */
 export async function checkLive(): Promise<boolean> {
   try {
-    const res = await fetch(
-      `${API_URL}?status=IN_PLAY`,
-      { headers: { 'X-Auth-Token': API_KEY } },
+    const data = await fetchAPI();
+    return (data.matches ?? []).some((m: any) =>
+      ['IN_PLAY', 'PAUSED', 'HALFTIME'].includes(m.status)
     );
-    if (!res.ok) return false;
-    const data = await res.json();
-    return (data.matches?.length ?? 0) > 0;
   } catch {
     return false;
   }
