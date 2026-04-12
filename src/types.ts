@@ -59,6 +59,29 @@ export type AppUser = {
   role: 'admin' | 'user';
 };
 
+export type LiveRound = {
+  id: string;
+  name: string;
+  status: 'upcoming' | 'open' | 'closed';
+  matchIds: string[];
+};
+
+export type LiveMatchPrediction = {
+  homeScore: number;
+  awayScore: number;
+  points?: number;
+};
+
+export type UserLiveEntry = {
+  id: string;
+  userId: string;
+  userName: string;
+  roundId: string;
+  predictions: Record<string, LiveMatchPrediction>;
+  totalPoints: number;
+  savedAt: string;
+};
+
 export type TournamentState = {
   teams: Team[];
   matches: Match[];

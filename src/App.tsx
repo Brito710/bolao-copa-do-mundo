@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Trophy, Calendar, Settings, Play, ChevronRight, ChevronLeft, LayoutGrid,
   Info, Zap, Save, CheckCircle2, ListOrdered, User, LayoutDashboard,
-  TrendingUp, ArrowUpRight, Shield, Trash2, Plus, Users, Star
+  TrendingUp, ArrowUpRight, Shield, Trash2, Plus, Users, Star, Radio
 } from 'lucide-react';
 import { TEAMS } from './data/teams';
 import {
@@ -14,6 +14,7 @@ import {
 } from './lib/simulation';
 import type { Match, Prediction, UserPrediction, AppUser } from './types';
 import { supabaseService } from './lib/supabaseService';
+import { BolaoAoVivo } from './components/BolaoAoVivo';
 
 const SidebarItem = ({ icon: Icon, active = false, onClick, label }: { icon: any; active?: boolean; onClick?: () => void; label: string }) => (
   <div onClick={onClick} className={`group relative p-3 rounded-xl cursor-pointer transition-all duration-300 ${active ? 'bg-fifa-green/20 text-fifa-green shadow-[0_0_20px_rgba(0,223,89,0.4)]' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
@@ -119,7 +120,7 @@ const BracketView = ({ roundOf32, roundOf16, quarterFinals, semiFinals, final, t
 );
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'home'|'bolao'|'ranking'|'results'|'official'|'users'>('home');
+  const [activeTab, setActiveTab] = useState<'home'|'bolao'|'live'|'ranking'|'results'|'official'|'users'>('home');
   const [officialMatches, setOfficialMatches] = useState<Match[]>([]);
   const [userPredictions, setUserPredictions] = useState<Record<string, Prediction>>({});
   const [user, setUser] = useState<AppUser | null>(null);
@@ -335,6 +336,7 @@ export default function App() {
             <SidebarItem label="Início" icon={LayoutDashboard} active={activeTab==='home'} onClick={()=>setActiveTab('home')}/>
             <SidebarItem label="Classificação Oficial" icon={LayoutGrid} active={activeTab==='official'} onClick={()=>setActiveTab('official')}/>
             <SidebarItem label="Bolão" icon={Calendar} active={activeTab==='bolao'} onClick={()=>setActiveTab('bolao')}/>
+            <SidebarItem label="Bolão Ao Vivo" icon={Radio} active={activeTab==='live'} onClick={()=>setActiveTab('live')}/>
             <SidebarItem label="Ranking" icon={ListOrdered} active={activeTab==='ranking'} onClick={()=>setActiveTab('ranking')}/>
             {user.role==='admin'&&<SidebarItem label="Usuários" icon={Users} active={activeTab==='users'} onClick={()=>setActiveTab('users')}/>}
             {user.role==='admin'&&<SidebarItem label="Admin" icon={Settings} active={activeTab==='results'} onClick={()=>setActiveTab('results')}/>}
@@ -517,6 +519,11 @@ export default function App() {
               )}
             </AnimatePresence>
 
+            {/* BOLÃO AO VIVO */}
+            {activeTab==='live'&&(
+              <BolaoAoVivo user={user} officialMatches={officialMatches}/>
+            )}
+
             {/* OFFICIAL */}
             {activeTab==='official'&&(
               <div className="space-y-12">
@@ -648,6 +655,7 @@ export default function App() {
           <button onClick={()=>setActiveTab('home')} className={`flex flex-col items-center gap-1 ${activeTab==='home'?'text-fifa-green':'text-gray-500'}`}><LayoutDashboard size={20}/><span className="text-[9px] font-bold uppercase">Início</span></button>
           <button onClick={()=>setActiveTab('official')} className={`flex flex-col items-center gap-1 ${activeTab==='official'?'text-fifa-green':'text-gray-500'}`}><LayoutGrid size={20}/><span className="text-[9px] font-bold uppercase">Oficial</span></button>
           <button onClick={()=>setActiveTab('bolao')} className={`flex flex-col items-center gap-1 ${activeTab==='bolao'?'text-fifa-green':'text-gray-500'}`}><Calendar size={20}/><span className="text-[9px] font-bold uppercase">Bolão</span></button>
+          <button onClick={()=>setActiveTab('live')} className={`flex flex-col items-center gap-1 ${activeTab==='live'?'text-fifa-green':'text-gray-500'}`}><Radio size={20}/><span className="text-[9px] font-bold uppercase">Ao Vivo</span></button>
           <button onClick={()=>setActiveTab('ranking')} className={`flex flex-col items-center gap-1 ${activeTab==='ranking'?'text-fifa-green':'text-gray-500'}`}><ListOrdered size={20}/><span className="text-[9px] font-bold uppercase">Ranking</span></button>
           {user.role==='admin'&&<button onClick={()=>setActiveTab('results')} className={`flex flex-col items-center gap-1 ${activeTab==='results'?'text-fifa-green':'text-gray-500'}`}><Settings size={20}/><span className="text-[9px] font-bold uppercase">Admin</span></button>}
           <button onClick={handleLogout} className="flex flex-col items-center gap-1 text-red-500"><ArrowUpRight className="rotate-180" size={20}/><span className="text-[9px] font-bold uppercase">Sair</span></button>
