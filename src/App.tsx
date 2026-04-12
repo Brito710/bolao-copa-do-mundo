@@ -521,7 +521,16 @@ export default function App() {
 
             {/* BOLÃO AO VIVO */}
             {activeTab==='live'&&(
-              <BolaoAoVivo user={user} officialMatches={officialMatches}/>
+              <BolaoAoVivo
+                user={user}
+                officialMatches={officialMatches}
+                officialRoundOf32={officialRoundOf32}
+                officialRoundOf16={officialRoundOf16}
+                officialQF={officialQF}
+                officialSF={officialSF}
+                officialFinal={officialFinal}
+                officialTP={officialTP}
+              />
             )}
 
             {/* OFFICIAL */}
