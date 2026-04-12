@@ -246,10 +246,14 @@ class SupabaseService {
     if (idx >= 0) current[idx] = round; else current.push(round);
     localStorage.setItem('bolao_live_rounds', JSON.stringify(current));
     if (supabase) {
-      const { error } = await supabase.from('live_rounds').upsert({
-        id: round.id, name: round.name, status: round.status, match_ids: round.matchIds,
-      });
-      if (error) throw new Error(error.message);
+      try {
+        const { error } = await supabase.from('live_rounds').upsert({
+          id: round.id, name: round.name, status: round.status, match_ids: round.matchIds,
+        });
+        if (error) console.warn('[Supabase] saveLiveRound:', error.message);
+      } catch (e: any) {
+        console.warn('[Supabase] saveLiveRound exception:', e.message);
+      }
     }
   }
 

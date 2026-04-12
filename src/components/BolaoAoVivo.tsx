@@ -232,14 +232,14 @@ export function BolaoAoVivo({
   };
 
   // ── Admin: cycle round status ───────────────────────────────────────────────
-  const handleCycleStatus = async (round: LiveRound) => {
+  const handleCycleStatus = (round: LiveRound) => {
     const next: LiveRound['status'] =
       round.status === 'upcoming' ? 'open'
       : round.status === 'open' ? 'closed'
       : 'upcoming';
     const updated = { ...round, status: next };
-    await supabaseService.saveLiveRound(updated);
     setRounds(prev => prev.map(r => (r.id === round.id ? updated : r)));
+    supabaseService.saveLiveRound(updated);
   };
 
   const handleDeleteRound = async (roundId: string) => {
