@@ -276,7 +276,7 @@ export default function App() {
     const sf2=generateNextStage(ssf,nk,'final');sf2.forEach(m=>{nk[m.id]=sim(m);});
     const stp=generateThirdPlaceMatch(ssf,nk);if(stp)nk[stp.id]=sim(stp);
     setOfficialMatches(nm);setOfficialKnockoutPredictions(nk);
-    supabaseService.saveOfficialMatches(nm);supabaseService.saveSetting('official_knockout_predictions',nk);
+    // Simulação é apenas preview local — não persiste no Supabase/localStorage
     setShowSaveSuccess(true);setTimeout(()=>setShowSaveSuccess(false),3000);
   };
   const clearOfficialResults = () => {
