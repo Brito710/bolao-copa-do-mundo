@@ -448,7 +448,7 @@ export default function App() {
                             </div>
                             <div className="space-y-3 pt-6 border-t border-black/5 bg-slate-50/50 -mx-6 px-6 pb-6">
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Palpites das Partidas</p>
-                              {officialMatches.filter(m=>m.group===groupName).map(match=>{const ht=TEAMS.find(t=>t.id===match.homeTeamId);const at=TEAMS.find(t=>t.id===match.awayTeamId);if(!ht||!at)return null;const pred=userPredictions[match.id]||{homeScore:0,awayScore:0};return(
+                              {officialMatches.filter(m=>{const ht=TEAMS.find(t=>t.id===m.homeTeamId);const at=TEAMS.find(t=>t.id===m.awayTeamId);return ht?.group===groupName&&at?.group===groupName&&m.stage==='group';}).map(match=>{const ht=TEAMS.find(t=>t.id===match.homeTeamId);const at=TEAMS.find(t=>t.id===match.awayTeamId);if(!ht||!at)return null;const pred=userPredictions[match.id]||{homeScore:0,awayScore:0};return(
                                 <div key={match.id} className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                                   <div className="flex-1 flex items-center gap-2 overflow-hidden"><img src={ht.crest} alt={ht.name} className="w-5 h-5 object-contain shrink-0" referrerPolicy="no-referrer"/><span className="font-black text-[10px] text-slate-900 uppercase truncate tracking-tighter">{ht.name}</span></div>
                                   <div className="flex items-center gap-1 shrink-0 md:hidden">

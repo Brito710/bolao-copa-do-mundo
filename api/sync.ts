@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const API_KEY = '4390b38783cc4850b09854c8066ebcc4';
-const API_URL = 'https://api.football-data.org/v4/competitions/WC/matches';
+const API_URL = 'https://api.football-data.org/v4/competitions/WC/matches?season=2026';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Allow requests from our own app
