@@ -308,24 +308,8 @@ export function BolaoAoVivo({
             BOLÃO<br /><span className="text-fifa-green">AO VIVO</span>
           </h2>
           <p className="text-white/50 text-xs mt-3 max-w-sm">
-            Faça palpites para cada rodada da Copa. Pontos: <b className="text-white">+5</b> placar exato · <b className="text-white">+2</b> vencedor/empate · <b className="text-white">-1</b> erro total.
+            Faça palpites para cada rodada da Copa e acompanhe sua posição no ranking oficial.
           </p>
-        </div>
-      </div>
-
-      {/* ── Scoring legend ── */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="p-3 bg-fifa-green/10 border border-fifa-green/20 rounded-2xl text-center">
-          <p className="text-[10px] font-black text-fifa-green uppercase tracking-wider mb-1">Placar Exato</p>
-          <p className="text-2xl font-black italic">+5</p>
-        </div>
-        <div className="p-3 bg-fifa-blue/10 border border-fifa-blue/20 rounded-2xl text-center">
-          <p className="text-[10px] font-black text-fifa-blue uppercase tracking-wider mb-1">Vencedor / Empate</p>
-          <p className="text-2xl font-black italic">+2</p>
-        </div>
-        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-2xl text-center">
-          <p className="text-[10px] font-black text-red-400 uppercase tracking-wider mb-1">Errou Tudo</p>
-          <p className="text-2xl font-black italic">-1</p>
         </div>
       </div>
 
