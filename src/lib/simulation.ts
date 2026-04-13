@@ -297,7 +297,7 @@ export function getScoringDetails(
   prediction: Prediction,
   actual: Match,
   isGolden: boolean = false
-): { points: number; type: 'exact' | 'outcome' | 'wrong' | 'none' } {
+): { points: number; type: 'exact' | 'winner_goals' | 'diff' | 'loser_goals' | 'outcome' | 'wrong' | 'none' } {
   if (actual.status !== 'completed') return { points: 0, type: 'none' };
 
   const ah = actual.homeScore ?? 0;
@@ -305,18 +305,63 @@ export function getScoringDetails(
   const ph = prediction.homeScore;
   const pa = prediction.awayScore;
 
-  const multiplier = isGolden ? 2 : 1;
-
-  if (ph === ah && pa === aa) {
-    return { points: 10 * multiplier, type: 'exact' };
+  // Stage multiplier
+  let stageMultiplier = 1;
+  if (['round_of_32', 'round_of_16', 'quarter_final'].includes(actual.stage)) {
+    stageMultiplier = 1.5;
+  } else if (['semi_final', 'final', 'third_place'].includes(actual.stage)) {
+    stageMultiplier = 2;
   }
+
+  const goldenMultiplier = isGolden ? 2 : 1;
+  const multiplier = stageMultiplier * goldenMultiplier;
+
+  const isKnockout = actual.stage !== 'group';
+
+  // Actual winner: from score, or penalty tiebreaker stored in winnerId
+  let actualWinnerId: string | undefined;
+  if (ah > aa) actualWinnerId = actual.homeTeamId;
+  else if (aa > ah) actualWinnerId = actual.awayTeamId;
+  else actualWinnerId = actual.winnerId;
+
+  // Classification bonus: knockout only, if user picked the correct team to advance
+  const classificationBonus =
+    isKnockout && prediction.winnerId && prediction.winnerId === actualWinnerId ? 10 : 0;
 
   const actualOutcome = ah > aa ? 'home' : aa > ah ? 'away' : 'draw';
   const predOutcome = ph > pa ? 'home' : pa > ph ? 'away' : 'draw';
+  const outcomeCorrect = actualOutcome === predOutcome;
 
-  if (actualOutcome === predOutcome) {
-    return { points: 5 * multiplier, type: 'outcome' };
+  // Exact score
+  if (ph === ah && pa === aa) {
+    return { points: Math.round(25 * multiplier) + classificationBonus, type: 'exact' };
   }
 
-  return { points: -2 * multiplier, type: 'wrong' };
+  if (!outcomeCorrect) {
+    return { points: classificationBonus, type: classificationBonus > 0 ? 'outcome' : 'wrong' };
+  }
+
+  // Outcome correct, not exact — draw case: only 10 pts (no winner/loser distinction)
+  if (actualOutcome === 'draw') {
+    return { points: Math.round(10 * multiplier) + classificationBonus, type: 'outcome' };
+  }
+
+  // Outcome correct with a clear winner
+  const [actualWinnerGoals, actualLoserGoals] = ah > aa ? [ah, aa] : [aa, ah];
+  const [predWinnerGoals, predLoserGoals] = ph > pa ? [ph, pa] : [pa, ph];
+
+  if (predWinnerGoals === actualWinnerGoals) {
+    // Winner goals correct (loser goals wrong, otherwise it'd be exact)
+    return { points: Math.round(18 * multiplier) + classificationBonus, type: 'winner_goals' };
+  }
+  if ((ph - pa) === (ah - aa)) {
+    // Same signed goal difference
+    return { points: Math.round(15 * multiplier) + classificationBonus, type: 'diff' };
+  }
+  if (predLoserGoals === actualLoserGoals) {
+    // Loser goals correct
+    return { points: Math.round(12 * multiplier) + classificationBonus, type: 'loser_goals' };
+  }
+
+  return { points: Math.round(10 * multiplier) + classificationBonus, type: 'outcome' };
 }

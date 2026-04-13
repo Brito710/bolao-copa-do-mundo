@@ -14,6 +14,7 @@ export type Match = {
   awayTeamId: string;
   homeScore?: number;
   awayScore?: number;
+  winnerId?: string;
   status: 'upcoming' | 'live' | 'completed';
   stage: 'group' | 'round_of_32' | 'round_of_16' | 'quarter_final' | 'semi_final' | 'third_place' | 'final';
   date: string;

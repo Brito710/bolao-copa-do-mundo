@@ -170,16 +170,24 @@ export default function App() {
   const tp = useMemo(() => { if(!sf.length||!sf.every(m=>userPredictions[m.id])) return null; return generateThirdPlaceMatch(sf,userPredictions); }, [sf,userPredictions]);
   const adminPreviewStandings = useMemo(() => calculateStandings(officialMatches,TEAMS), [officialMatches]);
   const updatedRanking = useMemo(() => {
-    const allM = [...officialMatches, ...Object.entries(officialKnockoutPredictions).map(([id,pred])=>({id,homeTeamId:'',awayTeamId:'',homeScore:pred.homeScore,awayScore:pred.awayScore,status:'completed' as const,stage:'final' as any,date:'',venue:''}))];
+    const allKOMatches = [...officialRoundOf32,...officialRoundOf16,...officialQF,...officialSF,...officialFinal,...(officialTP?[officialTP]:[])];
+    const koMatchMap = new Map(allKOMatches.map(m=>[m.id,m]));
+    const allM = [
+      ...officialMatches,
+      ...Object.entries(officialKnockoutPredictions).map(([id,pred])=>{
+        const ko=koMatchMap.get(id);
+        return {id,homeTeamId:ko?.homeTeamId??'',awayTeamId:ko?.awayTeamId??'',homeScore:pred.homeScore,awayScore:pred.awayScore,winnerId:pred.winnerId,status:'completed' as const,stage:(ko?.stage??'final') as Match['stage'],date:'',venue:''};
+      })
+    ];
     return savedUsers.map(u => {
       let pts=0,ex=0,out=0,wr=0;
       Object.entries(u.predictions as Record<string,Prediction>).forEach(([mid,pred]) => {
         const actual=allM.find(m=>m.id===mid&&m.status==='completed');
-        if(actual){const d=getScoringDetails(pred,actual,u.goldenMatchIds?.includes(mid)||false);pts+=d.points;if(d.type==='exact')ex++;else if(d.type==='outcome')out++;else if(d.type==='wrong')wr++;}
+        if(actual){const d=getScoringDetails(pred,actual,u.goldenMatchIds?.includes(mid)||false);pts+=d.points;if(d.type==='exact')ex++;else if(['winner_goals','diff','loser_goals','outcome'].includes(d.type))out++;else if(d.type==='wrong')wr++;}
       });
       return {...u,totalPoints:pts,exactScores:ex,correctOutcomes:out,wrongResults:wr};
     }).filter(u=>user?.role==='admin'||!u.isTest).sort((a,b)=>b.totalPoints-a.totalPoints);
-  }, [savedUsers,user,officialMatches,officialKnockoutPredictions]);
+  }, [savedUsers,user,officialMatches,officialKnockoutPredictions,officialRoundOf32,officialRoundOf16,officialQF,officialSF,officialFinal,officialTP]);
   const hasSubmittedBolao = useMemo(() => savedUsers.some(u=>u.userName.toLowerCase()===user?.name.toLowerCase()), [savedUsers,user]);
 
   useEffect(() => {
@@ -584,11 +592,43 @@ export default function App() {
             {activeTab==='ranking'&&(
               <div className="space-y-8">
                 <div><h2 className="text-3xl font-black tracking-tight uppercase italic">RANKING <span className="fifa-gradient-text">GERAL</span></h2><p className="text-gray-500 text-sm">Veja quem está liderando o bolão da Copa 2026.</p></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="p-6 bg-fifa-green/10 border border-fifa-green/20 rounded-[2rem]"><p className="text-[10px] font-black text-fifa-green uppercase tracking-[0.3em] mb-2">Placar Exato</p><p className="text-4xl font-black italic tracking-tighter">10 PONTOS</p><p className="text-xs text-gray-500 uppercase font-bold mt-2 leading-tight">Acertou o placar cheio</p></div>
-                  <div className="p-6 bg-fifa-blue/10 border border-fifa-blue/20 rounded-[2rem]"><p className="text-[10px] font-black text-fifa-blue uppercase tracking-[0.3em] mb-2">Vencedor/Empate</p><p className="text-4xl font-black italic tracking-tighter">5 PONTOS</p><p className="text-xs text-gray-500 uppercase font-bold mt-2 leading-tight">Acertou quem ganha ou empate</p></div>
-                  <div className="p-6 bg-fifa-red/10 border border-fifa-red/20 rounded-[2rem]"><p className="text-[10px] font-black text-fifa-red uppercase tracking-[0.3em] mb-2">Erro Total</p><p className="text-4xl font-black italic tracking-tighter">-2 PONTOS</p><p className="text-xs text-gray-500 uppercase font-bold mt-2 leading-tight">Errou o resultado completamente</p></div>
-                  <div className="p-6 bg-fifa-yellow/10 border border-fifa-yellow/20 rounded-[2rem]"><p className="text-[10px] font-black text-fifa-yellow uppercase tracking-[0.3em] mb-2">Dica de Ouro</p><p className="text-4xl font-black italic tracking-tighter">DOBRO</p><p className="text-xs text-gray-500 uppercase font-bold mt-2 leading-tight">Pontuação dobrada em 3 partidas</p></div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <GlassCard className="lg:col-span-2 p-6 border-white/5">
+                    <p className="text-[10px] font-black text-fifa-green uppercase tracking-[0.3em] mb-5">Pontuação de Placar</p>
+                    <div className="space-y-1">
+                      {([
+                        {pts:'25',badge:'text-fifa-green bg-fifa-green/20',label:'Placar exato',example:'Apostou 2×1 → terminou 2×1'},
+                        {pts:'18',badge:'text-fifa-blue bg-fifa-blue/20',label:'Vencedor + gols do vencedor',example:'Apostou 2×0 → terminou 2×1'},
+                        {pts:'15',badge:'text-fifa-blue bg-fifa-blue/20',label:'Vencedor + diferença de gols',example:'Apostou 3×1 → terminou 2×0'},
+                        {pts:'12',badge:'text-fifa-blue bg-fifa-blue/20',label:'Vencedor + gols do perdedor',example:'Apostou 2×1 → terminou 3×1'},
+                        {pts:'10',badge:'text-fifa-yellow bg-fifa-yellow/20',label:'Apenas vencedor ou empate',example:'Acertou o resultado sem critério de gols'},
+                        {pts:'0', badge:'text-gray-500 bg-white/5',        label:'Resultado errado',example:'Errou o vencedor ou empate'},
+                      ] as const).map(r=>(
+                        <div key={r.pts} className="flex items-center gap-4 py-2.5 border-b border-white/5 last:border-0">
+                          <span className={`w-10 text-center font-black text-sm rounded-lg py-1 shrink-0 ${r.badge}`}>{r.pts}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-white leading-tight">{r.label}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">{r.example}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </GlassCard>
+                  <div className="space-y-4">
+                    <GlassCard className="p-6 border-fifa-yellow/20 bg-fifa-yellow/5">
+                      <p className="text-[10px] font-black text-fifa-yellow uppercase tracking-[0.3em] mb-2">Bônus Eliminatórias</p>
+                      <p className="text-3xl font-black italic tracking-tighter">+10 PTS</p>
+                      <p className="text-[11px] text-gray-400 mt-3 leading-relaxed">Independente do placar, acertar quem avança de fase vale +10 pontos extras (tempo normal, prorrogação ou pênaltis).</p>
+                    </GlassCard>
+                    <GlassCard className="p-6 border-white/5">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Multiplicadores por Fase</p>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Fase de Grupos</span><span className="font-black text-sm bg-white/10 px-2 py-0.5 rounded-lg">×1</span></div>
+                        <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Oitavas / Quartas</span><span className="font-black text-sm text-fifa-blue bg-fifa-blue/20 px-2 py-0.5 rounded-lg">×1.5</span></div>
+                        <div className="flex items-center justify-between"><span className="text-xs text-gray-400">Semifinal / Final</span><span className="font-black text-sm text-fifa-green bg-fifa-green/20 px-2 py-0.5 rounded-lg">×2</span></div>
+                      </div>
+                    </GlassCard>
+                  </div>
                 </div>
                 <GlassCard className="hidden md:block overflow-hidden border-white/5">
                   <div className="overflow-x-auto">
